@@ -1,0 +1,490 @@
+<title>Claims Triage Queue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: concept intro, then one working screen (prioritised queue | claim detail with assignment), then decisions and the token set it runs on. */
+:root{
+  --bg:#f3f3f6; --surface:#ffffff; --sunk:#f7f7fa; --ink:#1a1a24; --muted:#5b5b6e; --faint:#8b8b9c; --line:#dedee6;
+  --accent:#5a3d99; --accent-soft:#eee9f8;
+  --ok:#23794a; --ok-soft:#e4f3ea; --warn:#955800; --warn-soft:#fbf0dc; --crit:#b3362c; --crit-soft:#fbe8e5;
+  --f-sans:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --row-py:10px; --radius:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111117; --surface:#18181f; --sunk:#14141a; --ink:#e8e8ef; --muted:#a1a1b3; --faint:#72728a; --line:#2c2c38;
+  --accent:#b39cf0; --accent-soft:#261f3d;
+  --ok:#6cd097; --ok-soft:#14291c; --warn:#e8ab4c; --warn-soft:#2e2411; --crit:#f0877c; --crit-soft:#361a18; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#111117; --surface:#18181f; --sunk:#14141a; --ink:#e8e8ef; --muted:#a1a1b3; --faint:#72728a; --line:#2c2c38;
+  --accent:#b39cf0; --accent-soft:#261f3d;
+  --ok:#6cd097; --ok-soft:#14291c; --warn:#e8ab4c; --warn-soft:#2e2411; --crit:#f0877c; --crit-soft:#361a18; color-scheme:dark;
+}
+.app[data-density="compact"]{--row-py:5px}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-sans);font-size:14.5px;line-height:1.5;padding:0 16px}
+.wrap{max-width:1280px;margin:0 auto;padding-block:36px 56px;display:flex;flex-direction:column;gap:28px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0}
+
+.intro{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-between;align-items:flex-end}
+.intro-text{max-width:720px;min-width:0}
+h1{font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-.02em;font-weight:700;margin:8px 0 12px;text-wrap:balance}
+.lede{margin:0;color:var(--muted);max-width:64ch;font-size:15.5px}
+.intro-meta{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 13px;font-weight:600;font-size:13.5px}
+.btn:hover{border-color:var(--faint)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn-primary:hover{filter:brightness(1.07);border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+
+.app{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.bar{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.bar-left{display:flex;flex-direction:column;gap:2px}
+.bar-left b{font-size:15px}
+.bar-left span{font-size:12.5px;color:var(--muted)}
+.bar-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.keys{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface);color:var(--ink)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 350px}
+@media (max-width:980px){.grid{grid-template-columns:minmax(0,1fr)}.detail{border-left:0;border-top:1px solid var(--line)}}
+
+/* queue */
+.queue{display:flex;flex-direction:column;min-width:0}
+.tools{display:flex;flex-wrap:wrap;gap:8px 12px;justify-content:space-between;align-items:center;padding:12px 16px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip .n{font-family:var(--f-mono);margin-left:4px}
+.bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.bulkmsg{font-size:12.5px;padding:8px 16px;margin:0 16px 10px;border-radius:8px;background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn)}
+.bulkmsg.okmsg{background:var(--accent-soft);border-color:var(--accent)}
+.bulkmsg ul{margin:4px 0 0;padding-left:18px}
+.twrap{overflow-x:auto;border-top:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:720px}
+th{text-align:left;font-weight:600;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);background:var(--sunk);white-space:nowrap}
+td{padding:var(--row-py) 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--sunk)}
+tbody tr[aria-selected="true"] td{background:var(--accent-soft)}
+tbody tr[aria-selected="true"] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+td.cb,th.cb{width:36px;padding-left:16px}
+td.cb input{width:16px;height:16px;accent-color:var(--accent)}
+.rank{font-family:var(--f-mono);color:var(--faint);font-size:12px;width:28px}
+.cid{font-family:var(--f-mono);font-weight:500;font-size:13px;white-space:nowrap}
+.what{min-width:0}
+.what b{font-weight:600;display:block;font-size:13.5px}
+.what span{color:var(--muted);font-size:12.5px;display:block;max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app[data-density="compact"] .what span{display:none}
+.sev{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;font-weight:600}
+.sev i{display:inline-flex;gap:2px}
+.sev i b{width:5px;height:12px;border-radius:1px;background:var(--line);display:block}
+.sev.s4{color:var(--crit)} .sev.s3{color:var(--warn)} .sev.s2{color:var(--ink)} .sev.s1{color:var(--muted)}
+.sev.s4 i b{background:var(--crit)} .sev.s3 i b:nth-child(-n+3){background:var(--warn)} .sev.s2 i b:nth-child(-n+2){background:var(--muted)} .sev.s1 i b:first-child{background:var(--faint)}
+.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lit.hi{color:var(--crit);font-weight:600}
+.sla{white-space:nowrap;font-family:var(--f-mono);font-size:12.5px}
+.sla.due{color:var(--crit);font-weight:600}
+.sla.due::before{content:"▲ ";font-size:9px}
+.route{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;border:1px solid var(--line);border-radius:6px;padding:1px 8px;background:var(--surface)}
+.route.fast{border-color:var(--ok);color:var(--ok)}
+.route.siu{border-color:var(--warn);color:var(--warn)}
+.empty{padding:28px 16px;color:var(--muted);text-align:center}
+.done{border-top:1px solid var(--line);padding:12px 16px 16px;display:flex;flex-direction:column;gap:6px}
+.done h3{margin:0;font-size:12.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.done ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.done li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.linkish{background:none;border:0;padding:0;color:var(--accent);font-weight:600;font-size:12.5px;text-decoration:underline;text-underline-offset:2px}
+
+/* detail */
+.detail{border-left:1px solid var(--line);background:var(--sunk);padding:18px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.dhead h2{margin:4px 0 2px;font-size:19px;letter-spacing:-.01em;line-height:1.25}
+.dhead p{margin:0;color:var(--muted);font-size:13.5px}
+.why1{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:10px 12px;font-size:13.5px}
+.why1 b{font-weight:600}
+.dsec{display:flex;flex-direction:column;gap:8px}
+.dsec h3{margin:0;font-family:var(--f-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.scores{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.score{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.score span{font-size:12px;color:var(--muted)}
+.score b{font-size:18px;font-weight:700}
+.drivers{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.drivers li{display:grid;grid-template-columns:22px 1fr;gap:6px;align-items:baseline}
+.drivers .sgn{font-family:var(--f-mono);font-weight:600;text-align:center;border-radius:4px;font-size:12px}
+.drivers .up{color:var(--crit);background:var(--crit-soft)}
+.drivers .down{color:var(--ok);background:var(--ok-soft)}
+.caveat{font-size:12px;color:var(--muted);margin:0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.assign{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:10px}
+.sugg{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.sugg b{display:block;font-size:14.5px}
+.sugg small{color:var(--muted);font-size:12.5px}
+.cap{display:flex;align-items:center;gap:8px;font-size:12px;font-family:var(--f-mono);color:var(--muted)}
+.cap .meter{width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.cap .meter span{display:block;height:100%;background:var(--ok)}
+.cap.near .meter span{background:var(--warn)} .cap.full .meter span{background:var(--crit)}
+.cap.near,.cap.full{color:var(--warn)}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.field label{font-weight:600}
+.field select{border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:7px 9px}
+.warnline{font-size:12.5px;color:var(--warn);margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* notes */
+.notes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;border-top:1px solid var(--line);padding-top:28px}
+@media (max-width:860px){.notes{grid-template-columns:minmax(0,1fr)}}
+.notes h2{font-size:24px;letter-spacing:-.015em;margin:6px 0 14px;font-weight:700;text-wrap:balance}
+.frame{margin:0 0 18px;font-size:15px;max-width:62ch}
+.dl{margin:0;display:flex;flex-direction:column;gap:14px}
+.dl dt{font-weight:600;font-size:14.5px}
+.dl dd{margin:3px 0 0;color:var(--muted);font-size:14px;max-width:62ch}
+.dl dd b{color:var(--ink);font-weight:600}
+.tokens{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0;margin-top:4px}
+.tokens td{padding:5px 8px;border-bottom:1px solid var(--line)}
+.tokens td:first-child{font-family:var(--f-mono)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
+.foot{border-top:1px solid var(--line);padding-top:18px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between}
+.foot a{color:var(--accent)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,160%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:10px;font-size:13.5px;transition:transform .3s ease;max-width:calc(100% - 32px);z-index:5;display:flex;gap:12px;align-items:center}
+.toast.show{transform:translate(-50%,0)}
+.toast button{background:none;border:0;color:var(--surface);text-decoration:underline;font-weight:600;padding:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <div class="intro-text">
+      <p class="eyebrow">Unsolicited concept · Claims triage</p>
+      <h1>Nine new claims arrived overnight. Which one does the supervisor open first?</h1>
+      <p class="lede">A triage queue for a claims supervisor. Claims are ranked by predicted severity, litigation risk and time left to first contact. Each claim explains its scores, suggests an adjuster based on the claim type and how busy each adjuster is, and simple claims can go to fast track in one batch.</p>
+    </div>
+    <div class="intro-meta">
+      <button class="btn" id="reset" type="button">Restart demo</button>
+      <span class="eyebrow">Nikhil Raj Bairy · Sept 2026</span>
+    </div>
+  </header>
+
+  <section class="app" id="app" data-density="comfortable" aria-label="Claims triage prototype">
+    <div class="bar">
+      <div class="bar-left"><b>New claims · Personal lines</b><span id="barSub"></span></div>
+      <div class="bar-right">
+        <div class="keys" aria-hidden="true"><kbd>J</kbd><kbd>K</kbd> move <kbd>A</kbd> assign suggested <kbd>X</kbd> select</div>
+        <div class="seg" role="group" aria-label="Row density">
+          <button type="button" data-density="comfortable" aria-pressed="true">Comfortable</button>
+          <button type="button" data-density="compact" aria-pressed="false">Compact</button>
+        </div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="queue">
+        <div class="tools">
+          <div class="chips" role="group" aria-label="Filter claims">
+            <button class="chip" type="button" data-f="all" aria-pressed="true">All<span class="n" id="nAll"></span></button>
+            <button class="chip" type="button" data-f="due" aria-pressed="false">Contact due in 6h<span class="n" id="nDue"></span></button>
+            <button class="chip" type="button" data-f="fast" aria-pressed="false">Fast-track eligible<span class="n" id="nFast"></span></button>
+          </div>
+          <div class="bulk"><span id="selCount">0 selected</span><button class="btn" type="button" id="bulkFast" disabled>Send to fast track</button></div>
+        </div>
+        <div id="bulkMsg"></div>
+        <div class="twrap">
+          <table>
+            <caption class="sr">Unassigned claims, highest priority first</caption>
+            <thead><tr><th class="cb"><span class="sr">Select</span></th><th>#</th><th>Claim</th><th>What happened</th><th>Severity</th><th class="num">Litigation</th><th class="num">Est.</th><th>First contact</th><th>Suggested</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="done" id="done" hidden>
+          <h3>Assigned in this session</h3>
+          <ol id="doneList"></ol>
+        </div>
+      </div>
+      <aside class="detail" id="detail" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div>
+      <p class="eyebrow">Framing</p>
+      <h2>Triage is a routing decision made nine times before coffee</h2>
+      <p class="frame">A supervisor's morning job is not to read claims. It is to send each one to the right person before the first-contact deadline, and to spot the one that will turn into a lawsuit. The screen is built to answer "what next, and to whom" for each claim, with the model's reasoning one glance away.</p>
+      <dl class="dl">
+        <dt>One priority order, with its reasons shown</dt>
+        <dd>The rank combines severity, litigation risk and time to first contact. The top of each claim says in words why it sits where it does, so the order can be challenged instead of trusted blindly.</dd>
+        <dt>Scores come with their drivers</dt>
+        <dd>A "68% litigation risk" on its own invites guessing. Listing what raised and lowered it, like an attorney mentioned in the first report, lets the supervisor check it against the claim notes.</dd>
+        <dt>Suggestions respect workload</dt>
+        <dd>Suggested adjusters account for how many open claims each person has. If the supervisor overrides, an adjuster near capacity is flagged before the assignment, not after.</dd>
+        <dt>Batch actions check the rules first</dt>
+        <dd><b>Tradeoff:</b> fast track only accepts claims that meet every rule: low severity, no injury, litigation under 5%, estimate under $2,000. Mixed selections are blocked with the reason, which is slower but prevents a bodily injury claim slipping into automation.</dd>
+        <dt>Not colour alone</dt>
+        <dd>Severity uses a label and a bar count, and due-soon contact uses a marker and bold text as well as red. The queue works from the keyboard with J, K, A and X.</dd>
+      </dl>
+    </div>
+    <div>
+      <p class="eyebrow">Built on tokens</p>
+      <h2>Density is a token change, not a new layout</h2>
+      <p class="frame">Every colour, radius and row padding comes from a small token set. The Compact toggle above changes one spacing token and hides the secondary line, which is how implementation teams could offer density per client without forking components.</p>
+      <div style="overflow-x:auto">
+        <table class="tokens">
+          <tr><td>--accent</td><td><span class="sw" style="background:var(--accent)"></span>Selection, primary action</td></tr>
+          <tr><td>--crit</td><td><span class="sw" style="background:var(--crit)"></span>Very high severity, contact overdue soon</td></tr>
+          <tr><td>--warn</td><td><span class="sw" style="background:var(--warn)"></span>High severity, near capacity, SIU route</td></tr>
+          <tr><td>--ok</td><td><span class="sw" style="background:var(--ok)"></span>Fast track, spare capacity</td></tr>
+          <tr><td>--row-py</td><td>10px comfortable · 5px compact</td></tr>
+          <tr><td>--radius</td><td>10px on cards and panels</td></tr>
+        </table>
+      </div>
+      <dl class="dl" style="margin-top:18px">
+        <dt>What I'd test next</dt>
+        <dd>Whether supervisors agree with the rank on real mornings, how often they override the suggested adjuster and why, and whether batch fast-tracking changes how carefully each claim is read.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Unsolicited concept by Nikhil Raj Bairy, based on Guidewire's public product pages and job post. Not affiliated with Guidewire. Claims, people, scores and numbers are fictional.</span>
+    <a href="https://nikhilraj.framer.website" target="_blank" rel="noopener">nikhilraj.framer.website</a>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status"><span id="toastMsg"></span><button type="button" id="undo" hidden>Undo</button></div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const money = n => '$' + n.toLocaleString('en-US');
+  const SEV = ['', 'Low', 'Medium', 'High', 'Very high'];
+
+  function seed(){
+    return {
+      adj: {
+        ravi:{name:'Ravi K.', role:'Desk adjuster', open:18, cap:25},
+        meera:{name:'Meera S.', role:'Desk adjuster', open:24, cap:25},
+        tom:{name:'Tom B.', role:'Field adjuster', open:11, cap:15},
+        sara:{name:'Sara L.', role:'Complex and litigation', open:9, cap:12},
+        siu:{name:'SIU review', role:'Special investigations', open:3, cap:10},
+        fast:{name:'Fast track', role:'Automated handling', open:null, cap:null}
+      },
+      claims: [
+        {id:'CLM-7741', lob:'Auto', type:'Bodily injury', insured:'J. Alvarez', what:'Rear-ended at low speed; passenger reports neck pain', est:18500, sev:4, lit:68, sla:4, route:'sara', injury:true,
+          drivers:[['up','Injury reported: soft-tissue complaint'],['up','Claimant mentioned speaking to an attorney (first report notes)'],['up','Injured person is not the policyholder'],['down','Low-speed impact, no airbag deployment']],
+          facts:[['Policy','PA-3391-0482 · active'],['Date of loss','Sep 28, 2026'],['Location','Austin, TX'],['Vehicles','2'],['Injuries','1 passenger, neck pain']]},
+        {id:'CLM-7738', lob:'Auto', type:'Multi-vehicle collision', insured:'D. Okafor', what:'Three-car collision at an intersection; airbags deployed', est:22400, sev:3, lit:34, sla:9, route:'tom',
+          drivers:[['up','Airbags deployed in two vehicles'],['up','Three vehicles, liability unclear'],['down','No injuries reported at first notice']],
+          facts:[['Policy','PA-2207-1195 · active'],['Date of loss','Sep 29, 2026'],['Location','Round Rock, TX'],['Vehicles','3'],['Injuries','None reported']]},
+        {id:'CLM-7750', lob:'Auto', type:'Theft', insured:'K. Brennan', what:'Vehicle stolen from driveway overnight', est:27000, sev:3, lit:6, sla:12, route:'siu',
+          drivers:[['up','Reported 9 days after the loss date'],['up','Policy started 34 days before the loss'],['down','Police report number provided']],
+          facts:[['Policy','PA-4410-0027 · active'],['Date of loss','Sep 20, 2026'],['Location','Dallas, TX'],['Police report','DPD-26-118734'],['Injuries','None']]},
+        {id:'CLM-7747', lob:'Auto', type:'Collision', insured:'M. Duarte', what:'Reversed into a parked car in a store lot; bumper damage', est:3900, sev:2, lit:9, sla:22, route:'ravi',
+          drivers:[['up','Third-party vehicle involved'],['down','Low speed, parking lot'],['down','Photos provided at first notice']],
+          facts:[['Policy','PA-1182-7730 · active'],['Date of loss','Sep 29, 2026'],['Location','Plano, TX'],['Vehicles','2 (one parked)'],['Injuries','None']]},
+        {id:'CLM-7745', lob:'Property', type:'Water damage', insured:'P. Chen', what:'Burst pipe under kitchen sink; flooring damaged', est:6800, sev:2, lit:4, sla:20, route:'ravi',
+          drivers:[['up','Flooring replacement likely'],['down','Single room affected'],['down','Water mitigation vendor already on site']],
+          facts:[['Policy','HO-5520-3316 · active'],['Date of loss','Sep 29, 2026'],['Location','Houston, TX'],['Rooms','Kitchen'],['Injuries','None']]},
+        {id:'CLM-7754', lob:'Property', type:'Hail', insured:'L. Nguyen', what:'Hail dented the outdoor AC unit cover', est:1600, sev:1, lit:2, sla:23, route:'fast', fastOK:true,
+          drivers:[['down','Single item, estimate under $2,000'],['down','No structural damage reported']],
+          facts:[['Policy','HO-6012-8841 · active'],['Date of loss','Sep 29, 2026'],['Location','Frisco, TX'],['Injuries','None']]},
+        {id:'CLM-7749', lob:'Auto', type:'Collision', insured:'R. Patel', what:'Side mirror scraped on a narrow lane', est:950, sev:1, lit:2, sla:21, route:'fast', fastOK:true,
+          drivers:[['down','Single vehicle, cosmetic damage'],['down','Estimate under $2,000']],
+          facts:[['Policy','PA-3021-4456 · active'],['Date of loss','Sep 28, 2026'],['Location','Austin, TX'],['Injuries','None']]},
+        {id:'CLM-7752', lob:'Auto', type:'Glass', insured:'S. Okoye', what:'Windshield chip from road debris', est:420, sev:1, lit:1, sla:23, route:'fast', fastOK:true,
+          drivers:[['down','Glass-only claim'],['down','Covered under glass endorsement']],
+          facts:[['Policy','PA-2890-1102 · active'],['Date of loss','Sep 29, 2026'],['Location','Waco, TX'],['Injuries','None']]},
+        {id:'CLM-7753', lob:'Auto', type:'Towing', insured:'A. Romero', what:'Flat tyre on highway; towed to a garage', est:180, sev:1, lit:1, sla:23, route:'fast', fastOK:true,
+          drivers:[['down','Roadside assistance only'],['down','Estimate under $2,000']],
+          facts:[['Policy','PA-3345-9920 · active'],['Date of loss','Sep 29, 2026'],['Location','San Marcos, TX'],['Injuries','None']]}
+      ],
+      done: [], sel:null, checked:new Set(), filter:'all', msg:null, last:null
+    };
+  }
+  let S;
+
+  function score(c){ return [0,10,30,60,90][c.sev] + c.lit * 0.3 + (c.sla <= 6 ? 20 : c.sla <= 12 ? 10 : 0); }
+  function open(){ return S.claims.filter(c => !c.to).sort((a,b) => score(b) - score(a)); }
+  function visible(){
+    const o = open();
+    if (S.filter === 'due') return o.filter(c => c.sla <= 6);
+    if (S.filter === 'fast') return o.filter(c => c.fastOK);
+    return o;
+  }
+  function capClass(a){ if (a.cap == null) return ''; const r = a.open / a.cap; return r >= 1 ? 'full' : r >= 0.9 ? 'near' : ''; }
+  function capHTML(a){
+    if (a.cap == null) return '<span class="cap">No limit · rules-based</span>';
+    return '<span class="cap ' + capClass(a) + '"><span class="meter"><span style="width:' + Math.min(100, a.open / a.cap * 100) + '%"></span></span>' + a.open + '/' + a.cap + ' open' + (capClass(a) === 'full' ? ' · full' : capClass(a) === 'near' ? ' · nearly full' : '') + '</span>';
+  }
+  function sevHTML(s){ return '<span class="sev s' + s + '"><i aria-hidden="true"><b></b><b></b><b></b><b></b></i>' + SEV[s] + '</span>'; }
+  function routeHTML(r){ const a = S.adj[r]; return '<span class="route' + (r === 'fast' ? ' fast' : r === 'siu' ? ' siu' : '') + '">' + a.name + '</span>'; }
+  function whyRank(c, i){
+    const bits = [SEV[c.sev].toLowerCase() + ' severity'];
+    if (c.lit >= 20) bits.push(c.lit + '% litigation risk');
+    if (c.sla <= 12) bits.push(c.sla + 'h left to first contact');
+    if (c.route === 'siu') bits.push('fraud signals');
+    return '<b>#' + (i + 1) + ' in the queue</b> because of ' + (bits.length > 1 ? bits.slice(0,-1).join(', ') + ' and ' + bits[bits.length-1] : bits[0]) + '.';
+  }
+
+  /* ---------- render ---------- */
+  function renderAll(){ renderBar(); renderRows(); renderBulk(); renderDetail(); renderDone(); }
+  function renderBar(){
+    const o = open();
+    $('barSub').textContent = o.length + ' unassigned · ' + o.filter(c => c.sla <= 6).length + ' due within 6 hours · Wednesday 8:40 AM';
+    $('nAll').textContent = o.length; $('nDue').textContent = o.filter(c => c.sla <= 6).length; $('nFast').textContent = o.filter(c => c.fastOK).length;
+  }
+  function renderRows(){
+    const tb = $('rows'); tb.innerHTML = '';
+    const o = open(), list = visible();
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="9" class="empty">' + (o.length ? 'No claims match this filter.' : 'Queue clear. Every new claim has an owner.') + '</td></tr>'; return; }
+    list.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.setAttribute('aria-selected', String(S.sel === c.id));
+      tr.dataset.id = c.id;
+      tr.innerHTML =
+        '<td class="cb"><input type="checkbox" aria-label="Select ' + c.id + '"' + (S.checked.has(c.id) ? ' checked' : '') + '></td>' +
+        '<td class="rank">' + (o.indexOf(c) + 1) + '</td>' +
+        '<td class="cid">' + c.id + '</td>' +
+        '<td class="what"><b>' + c.lob + ' · ' + c.type + '</b><span>' + c.what + '</span></td>' +
+        '<td>' + sevHTML(c.sev) + '</td>' +
+        '<td class="num lit' + (c.lit >= 20 ? ' hi' : '') + '">' + c.lit + '%</td>' +
+        '<td class="num">' + money(c.est) + '</td>' +
+        '<td class="sla' + (c.sla <= 6 ? ' due' : '') + '">' + c.sla + 'h</td>' +
+        '<td>' + routeHTML(c.route) + '</td>';
+      tr.addEventListener('click', e => { if (e.target.type === 'checkbox') return; select(c.id); });
+      tr.querySelector('input').addEventListener('change', e => { toggleCheck(c.id, e.target.checked); });
+      tb.appendChild(tr);
+    });
+  }
+  function renderBulk(){
+    const n = S.checked.size;
+    $('selCount').textContent = n + ' selected';
+    $('bulkFast').disabled = n === 0;
+    $('bulkFast').textContent = n ? 'Send ' + n + ' to fast track' : 'Send to fast track';
+    const m = $('bulkMsg');
+    if (!S.msg) { m.innerHTML = ''; return; }
+    m.innerHTML = '<div class="bulkmsg' + (S.msg.ok ? ' okmsg' : '') + '" role="alert">' + S.msg.html + '</div>';
+    const b = m.querySelector('[data-selfast]'); if (b) b.addEventListener('click', selectEligible);
+  }
+  function renderDetail(){
+    const d = $('detail');
+    const o = open();
+    const c = S.claims.find(x => x.id === S.sel && !x.to) || o[0];
+    if (!c) { d.innerHTML = '<div class="dhead"><p class="eyebrow">Queue clear</p><h2>Every new claim has an owner</h2><p>Use Restart demo to run the morning again.</p></div>'; return; }
+    S.sel = c.id;
+    const i = o.indexOf(c);
+    const a = S.adj[c.route];
+    let h = '<div class="dhead"><p class="eyebrow">' + c.id + ' · ' + c.lob + ' · ' + c.type + '</p><h2>' + c.what + '</h2><p>Policyholder ' + c.insured + ' · estimate ' + money(c.est) + '</p></div>';
+    h += '<div class="why1">' + whyRank(c, i) + '</div>';
+    h += '<div class="dsec"><h3>Predicted at first notice</h3><div class="scores">' +
+      '<div class="score"><span>Severity</span><b>' + sevHTML(c.sev) + '</b></div>' +
+      '<div class="score"><span>Litigation risk</span><b class="mono' + (c.lit >= 20 ? ' lit hi' : '') + '">' + c.lit + '%</b></div></div>' +
+      '<ul class="drivers" aria-label="What moved these scores">' + c.drivers.map(([dir,t]) => '<li><span class="sgn ' + dir + '" aria-label="' + (dir === 'up' ? 'raises risk' : 'lowers risk') + '">' + (dir === 'up' ? '↑' : '↓') + '</span><span>' + t + '</span></li>').join('') + '</ul>' +
+      '<p class="caveat">Scores are estimates from similar past claims. Check the drivers against the claim notes before acting.</p></div>';
+    h += '<div class="dsec"><h3>Assign</h3><div class="assign">' +
+      '<div class="sugg"><div><small>Suggested</small><b>' + a.name + '</b><small>' + a.role + '</small></div>' + capHTML(a) + '</div>' +
+      '<div class="actions"><button class="btn btn-primary" type="button" id="assignSugg">Assign to ' + a.name + '</button></div>' +
+      '<div class="field"><label for="other">Or choose someone else</label><select id="other"><option value="">Choose an adjuster</option>' +
+      Object.entries(S.adj).filter(([k]) => k !== c.route && !(k === 'fast' && !c.fastOK)).map(([k,x]) => '<option value="' + k + '">' + x.name + ' · ' + x.role + (x.cap != null ? ' · ' + x.open + '/' + x.cap + (capClass(x) ? ' (' + (capClass(x) === 'full' ? 'full' : 'nearly full') + ')' : '') : '') + '</option>').join('') +
+      '</select></div><div id="otherWarn"></div>' +
+      '<div class="actions"><button class="btn" type="button" id="assignOther" disabled>Assign</button></div></div></div>';
+    h += '<div class="dsec"><h3>Claim facts</h3><dl class="kv">' + c.facts.map(([k,v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>').join('') + '</dl></div>';
+    d.innerHTML = h;
+    $('assignSugg').addEventListener('click', () => assign(c.id, c.route));
+    $('other').addEventListener('change', e => {
+      const k = e.target.value, btn = $('assignOther'), w = $('otherWarn');
+      btn.disabled = !k;
+      btn.textContent = k ? 'Assign to ' + S.adj[k].name : 'Assign';
+      const x = S.adj[k];
+      w.innerHTML = k && capClass(x) ? '<p class="warnline">' + x.name + ' has ' + x.open + ' of ' + x.cap + ' open claims. This assignment ' + (x.open + 1 > x.cap ? 'puts them over capacity.' : 'fills their queue.') + '</p>' : '';
+    });
+    $('assignOther').addEventListener('click', () => { const k = $('other').value; if (k) assign(c.id, k); });
+  }
+  function renderDone(){
+    $('done').hidden = !S.done.length;
+    $('doneList').innerHTML = S.done.slice().reverse().map(x => '<li><span class="cid">' + x.id + '</span><span>' + (x.to === 'fast' ? 'Sent to fast track' : 'Assigned to ' + S.adj[x.to].name) + (x.override ? ' · override' : '') + '</span></li>').join('');
+  }
+
+  /* ---------- actions ---------- */
+  function select(id){ S.sel = id; renderRows(); renderDetail(); if (innerWidth < 980) $('detail').scrollIntoView({block:'start'}); }
+  function toggleCheck(id, on){ on ? S.checked.add(id) : S.checked.delete(id); S.msg = null; renderBulk(); }
+  function assign(id, to){
+    const c = S.claims.find(x => x.id === id);
+    const nextIdx = open().indexOf(c);
+    c.to = to; c.override = to !== c.route;
+    if (S.adj[to].cap != null) S.adj[to].open++;
+    S.checked.delete(id);
+    S.done.push({id, to, override:c.override});
+    S.last = [id];
+    const o = open(); S.sel = o[Math.min(nextIdx, o.length - 1)] ? o[Math.min(nextIdx, o.length - 1)].id : null;
+    S.msg = null;
+    renderAll();
+    toast(id + (to === 'fast' ? ' sent to fast track.' : ' assigned to ' + S.adj[to].name + '.'), true);
+  }
+  function bulkFast(){
+    const ids = [...S.checked];
+    const bad = ids.map(id => S.claims.find(c => c.id === id)).filter(c => !c.fastOK);
+    if (bad.length) {
+      S.msg = {ok:false, html:'<b>' + bad.length + ' of ' + ids.length + ' selected claims can\'t go to fast track.</b> Fast track needs low severity, no injury, litigation risk under 5% and an estimate under $2,000.<ul>' +
+        bad.map(c => '<li>' + c.id + ': ' + SEV[c.sev].toLowerCase() + ' severity' + (c.injury ? ', injury reported' : '') + (c.lit >= 5 ? ', ' + c.lit + '% litigation risk' : '') + (c.est >= 2000 ? ', ' + money(c.est) + ' estimate' : '') + '</li>').join('') +
+        '</ul><button class="linkish" type="button" data-selfast>Select only eligible claims instead</button>'};
+      renderBulk(); return;
+    }
+    ids.forEach(id => { const c = S.claims.find(x => x.id === id); c.to = 'fast'; c.override = false; S.done.push({id, to:'fast'}); });
+    S.last = ids; S.checked.clear(); S.msg = null;
+    renderAll();
+    toast(ids.length + ' claims sent to fast track.', true);
+  }
+  function selectEligible(){
+    S.checked = new Set(open().filter(c => c.fastOK).map(c => c.id));
+    S.msg = {ok:true, html:'Selected the ' + S.checked.size + ' claims that meet every fast-track rule.'};
+    renderRows(); renderBulk();
+  }
+  function undo(){
+    if (!S.last) return;
+    S.last.forEach(id => {
+      const c = S.claims.find(x => x.id === id);
+      if (S.adj[c.to].cap != null) S.adj[c.to].open--;
+      c.to = null; c.override = false;
+      S.done = S.done.filter(x => x.id !== id);
+    });
+    S.sel = S.last[0]; S.last = null;
+    renderAll(); toast('Undone.', false);
+  }
+
+  let tt;
+  function toast(m, canUndo){
+    $('toastMsg').textContent = m; $('undo').hidden = !canUndo;
+    $('toast').classList.add('show'); clearTimeout(tt); tt = setTimeout(() => $('toast').classList.remove('show'), 4000);
+  }
+
+  $('bulkFast').addEventListener('click', bulkFast);
+  $('undo').addEventListener('click', () => { $('toast').classList.remove('show'); undo(); });
+  document.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
+    S.filter = b.dataset.f;
+    document.querySelectorAll('[data-f]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    renderRows();
+  }));
+  document.querySelectorAll('[data-density]').forEach(b => { if (b.tagName !== 'BUTTON') return; b.addEventListener('click', () => {
+    $('app').dataset.density = b.dataset.density;
+    document.querySelectorAll('button[data-density]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  }); });
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+    const list = visible(); if (!list.length) return;
+    const i = Math.max(0, list.findIndex(c => c.id === S.sel));
+    const k = e.key.toLowerCase();
+    if (k === 'j') { select(list[Math.min(i + 1, list.length - 1)].id); e.preventDefault(); }
+    else if (k === 'k') { select(list[Math.max(i - 1, 0)].id); e.preventDefault(); }
+    else if (k === 'a') { const c = list[i]; if (c) assign(c.id, c.route); }
+    else if (k === 'x') { const c = list[i]; if (c) { toggleCheck(c.id, !S.checked.has(c.id)); renderRows(); } }
+  });
+  $('reset').addEventListener('click', () => { S = seed(); renderAll(); });
+  S = seed(); renderAll();
+})();
+</script>
